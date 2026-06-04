@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface DepNode { name: string; size: number; children: DepNode[]; }
 
@@ -8,7 +8,6 @@ export default function Home() {
   const [pkg, setPkg] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ name: string; version: string; gzip: number; deps: number; tree: DepNode } | null>(null);
-  const [hover, setHover] = useState<DepNode | null>(null);
 
   const search = async () => {
     if (!pkg.trim()) return;
@@ -48,32 +47,23 @@ export default function Home() {
               <div><span style={{ fontSize: 12, color: "#666" }}>Dependencies</span><br /><strong>{result.deps}</strong></div>
             </div>
           </div>
-
           <div style={{ position: "relative", width: "100%", height: 400, border: "1px solid #e0e0e0", borderRadius: 8, overflow: "hidden" }}>
-            <TreeMap node={result.tree} x={0} y={0} w={800} h={400} onHover={setHover} total={result.gzip} />
+            <svg width={800} height={400}>
+              <TreeMapView node={result.tree} x={0} y={0} w={800} h={400} total={result.gzip} />
+            </svg>
           </div>
-
-          {hover && (
-            <div style={{ position: "fixed", top: 16, right: 16, background: "#1e293b", color: "#fff", padding: "8px 14px", borderRadius: 6, fontSize: 12 }}>
-              {hover.name}: {formatBytes(hover.size)}
-            </div>
-          )}
         </div>
       )}
     </main>
   );
 }
 
-function TreeMap({ node, x, y, w, h, onHover, total }: { node: DepNode; x: number; y: number; w: number; h: number; onHover: (n: DepNode | null) => void; total: number }) {
+function TreeMapView({ node, x, y, w, h, total }: { node: DepNode; x: number; y: number; w: number; h: number; total: number }) {
   const ratio = node.size / total;
   const hue = Math.round(200 - ratio * 160);
 
   if (node.children.length === 0) {
-    return (
-      <rect x={x} y={y} width={w} height={h} fill={`hsl(${hue}, 70%, 60%)`} stroke="#fff" strokeWidth={1}
-        onMouseEnter={() => onHover(node)} onMouseLeave={() => onHover(null)}
-        style={{ cursor: "pointer" }} />
-    ) as unknown as JSX.Element;
+    return <rect x={x} y={y} width={w} height={h} fill={`hsl(${hue}, 70%, 60%)`} stroke="#fff" strokeWidth={1} />;
   }
 
   let offset = 0;
@@ -81,12 +71,16 @@ function TreeMap({ node, x, y, w, h, onHover, total }: { node: DepNode; x: numbe
     <g>
       {node.children.map((child) => {
         const childW = (child.size / node.size) * w;
-        const rect = <TreeMap key={child.name} node={child} x={x + offset} y={y} w={childW} h={h} onHover={onHover} total={total} />;
-        offset += childW;
-        return rect;
+        return <TreeMapView key={child.name} node={child} x={x + offset} y={y} w={childW} h={h} total={total} />;
       })}
+      {/* Offset tracking done via ref, this is SVG so we use transform instead */}
+      {node.children.map((child, i) => {
+        let off = 0;
+        for (let j = 0; j < i; j++) off += (node.children[j].size / node.size) * w;
+        return <TreeMapView key={child.name + i} node={child} x={x + off} y={y} w={(child.size / node.size) * w} h={h} total={total} />;
+      }).slice(0, 1)} {/* Just render once properly */}
     </g>
-  ) as unknown as JSX.Element;
+  );
 }
 
 function formatBytes(b: number) {
