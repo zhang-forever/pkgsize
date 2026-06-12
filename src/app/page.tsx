@@ -31,6 +31,14 @@ const COLORS = [
   "#84cc16", "#e11d48", "#0ea5e9", "#a855f7", "#22c55e",
 ];
 
+const POPULAR_PACKAGES = [
+  { name: "react", icon: "⚛️" },
+  { name: "vue", icon: "💚" },
+  { name: "@angular/core", icon: "🅰️" },
+  { name: "express", icon: "🚂" },
+  { name: "next", icon: "▲" },
+];
+
 function colorForDep(name: string, depth: number): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
@@ -84,6 +92,8 @@ function squarify(items: DepNode[], rect: { x: number; y: number; w: number; h: 
 export default function Home() {
   const [pkg, setPkg] = useState("");
   const [comparePkg, setComparePkg] = useState("");
+  const [compareList, setCompareList] = useState<string[]>([]);
+  const [compareResults, setCompareResults] = useState<PkgResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PkgResult | null>(null);
   const [compareResult, setCompareResult] = useState<PkgResult | null>(null);
@@ -92,6 +102,8 @@ export default function Home() {
   const [showReadme, setShowReadme] = useState(false);
   const [readme, setReadme] = useState("");
   const [error, setError] = useState("");
+  const [showDepTree, setShowDepTree] = useState(false);
+  const [showBarChart, setShowBarChart] = useState(false);
   const svgRef = useRef<SVGSVGElement>(null);
   const [svgWidth, setSvgWidth] = useState(800);
 
@@ -163,6 +175,24 @@ export default function Home() {
     setLoading(false);
   };
 
+  const addToCompare = async (name: string) => {
+    if (!result) return;
+    setLoading(true); setError("");
+    try {
+      const r = await fetchPkg(name);
+      if (r && !compareList.includes(name)) {
+        setCompareList(prev => [...prev, name]);
+        setCompareResults(prev => [...prev, r]);
+      }
+    } catch (e: any) { setError(e.message); }
+    setLoading(false);
+  };
+
+  const removeFromCompare = (name: string) => {
+    setCompareList(prev => prev.filter(n => n !== name));
+    setCompareResults(prev => prev.filter(r => r.name !== name));
+  };
+
   const svgHeight = 400;
   const barHeight = 200;
 
@@ -202,6 +232,24 @@ export default function Home() {
       </div>
 
       {error && <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: 12, marginBottom: 20, color: "#dc2626", fontSize: 13 }}>⚠️ {error}</div>}
+
+      {/* Popular packages quick-select */}
+      {!result && !loading && (
+        <div style={{ marginBottom: 24 }}>
+          <p style={{ fontSize: 13, color: "#666", margin: "0 0 10px" }}>Popular packages:</p>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {POPULAR_PACKAGES.map(p => (
+              <button key={p.name}
+                onClick={() => { setPkg(p.name); }}
+                style={{ padding: "8px 16px", background: "#fff", border: "1px solid #e2e8f0", borderRadius: 20, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.15s" }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "#3b82f6"; e.currentTarget.style.background = "#eff6ff"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "#e2e8f0"; e.currentTarget.style.background = "#fff"; }}>
+                <span>{p.icon}</span> {p.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* History panel */}
       {showHistory && history.length > 0 && (
@@ -289,6 +337,109 @@ export default function Home() {
             </div>
           )}
 
+          {/* Dependency Tree View */}
+          {result.tree.children.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <button onClick={() => setShowDepTree(!showDepTree)}
+                style={{ padding: "8px 16px", background: showDepTree ? "#1e293b" : "#f1f5f9", color: showDepTree ? "#fff" : "#334155", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
+                🌳 {showDepTree ? "Hide" : "Show"} Dependency Tree
+              </button>
+              {showDepTree && (
+                <div style={{ background: "#f8fafc", borderRadius: 8, padding: 16, border: "1px solid #e2e8f0", fontFamily: "monospace", fontSize: 13, lineHeight: 1.8, overflowX: "auto" }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>📦 {result.name}@{result.version}</div>
+                  {result.tree.children.sort((a, b) => b.size - a.size).map((dep, i) => (
+                    <div key={i}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ color: "#94a3b8" }}>{i === result.tree.children.length - 1 ? "└── " : "├── "}</span>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: colorForDep(dep.name, i), display: "inline-block", flexShrink: 0 }} />
+                        <span>{dep.name}</span>
+                        <span style={{ color: "#94a3b8", fontSize: 11 }}>({formatBytes(dep.size)})</span>
+                      </div>
+                      {dep.children.length > 0 && dep.children.map((child, j) => (
+                        <div key={j} style={{ paddingLeft: 24, display: "flex", alignItems: "center", gap: 6, color: "#64748b", fontSize: 12 }}>
+                          <span style={{ color: "#cbd5e1" }}>{j === dep.children.length - 1 ? "└── " : "├── "}</span>
+                          <span>{child.name}</span>
+                          <span style={{ color: "#94a3b8", fontSize: 11 }}>({formatBytes(child.size)})</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Add to compare list */}
+          {result && (
+            <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 13, color: "#666" }}>Add to comparison:</span>
+              {POPULAR_PACKAGES.filter(p => p.name !== result.name).map(p => (
+                <button key={p.name}
+                  onClick={() => addToCompare(p.name)}
+                  disabled={compareList.includes(p.name) || loading}
+                  style={{ padding: "4px 12px", background: compareList.includes(p.name) ? "#d1fae5" : "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 12, fontSize: 12, cursor: compareList.includes(p.name) ? "default" : "pointer", opacity: compareList.includes(p.name) ? 0.6 : 1 }}>
+                  {p.icon} {p.name} {compareList.includes(p.name) ? "✓" : "+"}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Bar chart comparison */}
+          {result && (compareList.length > 0 || compareResult) && (
+            <div style={{ marginTop: 24 }}>
+              <button onClick={() => setShowBarChart(!showBarChart)}
+                style={{ padding: "8px 16px", background: showBarChart ? "#1e293b" : "#f1f5f9", color: showBarChart ? "#fff" : "#334155", border: "1px solid #cbd5e1", borderRadius: 8, fontSize: 13, cursor: "pointer", marginBottom: 8 }}>
+                📊 {showBarChart ? "Hide" : "Show"} Bar Chart Comparison
+              </button>
+              {showBarChart && (() => {
+                const allPkgs: PkgResult[] = [result, ...compareResults];
+                if (compareResult && !allPkgs.find(p => p.name === compareResult.name)) allPkgs.push(compareResult);
+                const maxGzip = Math.max(...allPkgs.map(p => p.gzip));
+                const barWidth = Math.min(80, Math.floor((svgWidth - 60) / allPkgs.length) - 12);
+                const chartHeight = 250;
+                return (
+                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: 20, border: "1px solid #e2e8f0", overflowX: "auto" }}>
+                    <h3 style={{ margin: "0 0 16px", fontSize: 14 }}>📦 Bundle Size Comparison (Gzip)</h3>
+                    <svg width={Math.max(svgWidth, allPkgs.length * (barWidth + 12) + 40)} height={chartHeight + 60}>
+                      {[0, 0.25, 0.5, 0.75, 1].map((frac, i) => (
+                        <g key={i}>
+                          <line x1={35} y1={chartHeight - frac * chartHeight + 20} x2={allPkgs.length * (barWidth + 12) + 35} y2={chartHeight - frac * chartHeight + 20} stroke="#e2e8f0" strokeDasharray="4 2" />
+                          <text x={32} y={chartHeight - frac * chartHeight + 24} textAnchor="end" fontSize={10} fill="#94a3b8">{formatBytes(frac * maxGzip)}</text>
+                        </g>
+                      ))}
+                      {allPkgs.map((p, i) => {
+                        const barH = maxGzip > 0 ? (p.gzip / maxGzip) * chartHeight : 0;
+                        const x = 40 + i * (barWidth + 12);
+                        const isMain = i === 0;
+                        const color = isMain ? "#3b82f6" : COLORS[(i - 1) % COLORS.length];
+                        return (
+                          <g key={i}>
+                            <rect x={x} y={chartHeight - barH + 20} width={barWidth} height={barH}
+                              fill={color} rx={4} opacity={0.85}
+                              style={{ transition: "opacity 0.15s" }}
+                              onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+                              onMouseLeave={e => (e.currentTarget.style.opacity = "0.85")} />
+                            <text x={x + barWidth / 2} y={chartHeight - barH + 14} textAnchor="middle" fontSize={10} fontWeight={600} fill="#334155">
+                              {formatBytes(p.gzip)}
+                            </text>
+                            <text x={x + barWidth / 2} y={chartHeight + 36} textAnchor="middle" fontSize={10} fill="#64748b">
+                              {p.name.length > 12 ? p.name.slice(0, 11) + "…" : p.name}
+                            </text>
+                            {compareList.includes(p.name) && (
+                              <text x={x + barWidth / 2} y={chartHeight + 50} textAnchor="middle" fontSize={9} fill="#94a3b8">
+                                <tspan style={{ cursor: "pointer" }} onClick={() => removeFromCompare(p.name)}>✕ remove</tspan>
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {/* Comparison panel */}
           {compareResult && (
             <div style={{ marginTop: 24, background: "#f8fafc", borderRadius: 8, padding: 20, border: "1px solid #e2e8f0" }}>
@@ -344,7 +495,7 @@ export default function Home() {
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#94a3b8" }}>
           <div style={{ fontSize: 48, marginBottom: 16 }}>📦</div>
           <p style={{ fontSize: 16 }}>Search an npm package to visualize its size</p>
-          <p style={{ fontSize: 13 }}>Try: <strong>react</strong>, <strong>lodash</strong>, <strong>next</strong>, <strong>vue</strong></p>
+          <p style={{ fontSize: 13 }}>Try: <strong style={{ cursor: "pointer" }} onClick={() => setPkg("react")}>react</strong>, <strong style={{ cursor: "pointer" }} onClick={() => setPkg("lodash")}>lodash</strong>, <strong style={{ cursor: "pointer" }} onClick={() => setPkg("next")}>next</strong>, <strong style={{ cursor: "pointer" }} onClick={() => setPkg("vue")}>vue</strong></p>
         </div>
       )}
     </main>
