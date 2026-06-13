@@ -5,6 +5,7 @@ export const metadata: Metadata = {
   description: "Visualize npm package sizes, compare dependencies, and find what's bloating your bundle.",
 };
 
+/** Root layout with metadata for PkgSize. */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
