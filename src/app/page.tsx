@@ -39,12 +39,14 @@ const POPULAR_PACKAGES = [
   { name: "next", icon: "▲" },
 ];
 
+/** Deterministic color from package name and depth */
 function colorForDep(name: string, depth: number): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
   return COLORS[Math.abs(hash + depth) % COLORS.length];
 }
 
+/** Lighten a hex color by a fixed amount */
 function lightenColor(hex: string, amount: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
@@ -55,6 +57,7 @@ function lightenColor(hex: string, amount: number): string {
   return `rgb(${nr},${ng},${nb})`;
 }
 
+/** Format byte count as human-readable string */
 function formatBytes(b: number) {
   if (b >= 1_000_000) return `${(b / 1_000_000).toFixed(1)} MB`;
   if (b >= 1_000) return `${(b / 1_000).toFixed(1)} KB`;
@@ -64,6 +67,7 @@ function formatBytes(b: number) {
 // Squarified treemap layout
 interface Rect { x: number; y: number; w: number; h: number; node: DepNode; }
 
+/** Squarified treemap layout algorithm */
 function squarify(items: DepNode[], rect: { x: number; y: number; w: number; h: number }): Rect[] {
   if (items.length === 0) return [];
   const total = items.reduce((s, d) => s + d.size, 0);
@@ -89,6 +93,7 @@ function squarify(items: DepNode[], rect: { x: number; y: number; w: number; h: 
   return results;
 }
 
+/** PkgSize — npm package size visualizer component */
 export default function Home() {
   const [pkg, setPkg] = useState("");
   const [comparePkg, setComparePkg] = useState("");
@@ -108,8 +113,12 @@ export default function Home() {
   const [svgWidth, setSvgWidth] = useState(800);
 
   useEffect(() => {
-    const saved = localStorage.getItem("pkgsize_history");
-    if (saved) setHistory(JSON.parse(saved));
+    try {
+      const saved = localStorage.getItem("pkgsize_history");
+      if (saved) setHistory(JSON.parse(saved));
+    } catch {
+      // Corrupted localStorage data — start fresh
+    }
     const obs = new ResizeObserver(entries => {
       const w = entries[0]?.contentRect?.width;
       if (w) setSvgWidth(Math.round(w));
@@ -118,6 +127,7 @@ export default function Home() {
     return () => obs.disconnect();
   }, []);
 
+  /** Save a search result to localStorage history (max 50 entries) */
   const saveToHistory = (r: PkgResult) => {
     const entry: HistoryEntry = { name: r.name, version: r.version, gzip: r.gzip, timestamp: Date.now() };
     setHistory(prev => {
@@ -127,9 +137,14 @@ export default function Home() {
     });
   };
 
+  /** Fetch package size data from Bundlephobia API */
   const fetchPkg = useCallback(async (name: string): Promise<PkgResult | null> => {
+    if (!name || name.length > 200) throw new Error("Invalid package name");
     const res = await fetch(`https://bundlephobia.com/api/size?package=${encodeURIComponent(name)}`);
-    if (!res.ok) throw new Error(`Package "${name}" not found`);
+    if (!res.ok) {
+      if (res.status === 404) throw new Error(`Package "${name}" not found`);
+      throw new Error(`API error (${res.status}) — please try again later`);
+    }
     const data = await res.json();
     const tree: DepNode = {
       name: data.name,
@@ -145,9 +160,11 @@ export default function Home() {
     };
   }, []);
 
+  /** Fetch README content from npm registry */
   const fetchReadme = useCallback(async (name: string) => {
     try {
       const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const readme = data.readme || "";
       setReadme(readme.slice(0, 5000));
@@ -323,7 +340,7 @@ export default function Home() {
             <div style={{ marginTop: 16 }}>
               <h3 style={{ fontSize: 14, margin: "0 0 8px" }}>Top dependencies by size</h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {result.tree.children.sort((a, b) => b.size - a.size).slice(0, 10).map((d, i) => (
+                {[...result.tree.children].sort((a, b) => b.size - a.size).slice(0, 10).map((d, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
                     <div style={{ width: 10, height: 10, borderRadius: 2, background: colorForDep(d.name, i), flexShrink: 0 }} />
                     <span style={{ flex: 1 }}>{d.name}</span>
@@ -347,7 +364,7 @@ export default function Home() {
               {showDepTree && (
                 <div style={{ background: "#f8fafc", borderRadius: 8, padding: 16, border: "1px solid #e2e8f0", fontFamily: "monospace", fontSize: 13, lineHeight: 1.8, overflowX: "auto" }}>
                   <div style={{ fontWeight: 700, marginBottom: 4 }}>📦 {result.name}@{result.version}</div>
-                  {result.tree.children.sort((a, b) => b.size - a.size).map((dep, i) => (
+                  {[...result.tree.children].sort((a, b) => b.size - a.size).map((dep, i) => (
                     <div key={i}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <span style={{ color: "#94a3b8" }}>{i === result.tree.children.length - 1 ? "└── " : "├── "}</span>
@@ -502,6 +519,7 @@ export default function Home() {
   );
 }
 
+/** Small stat card showing a label and colored value. */
 function Stat({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <div style={{ background: "#f8fafc", borderRadius: 8, padding: "12px 16px", minWidth: 100 }}>
